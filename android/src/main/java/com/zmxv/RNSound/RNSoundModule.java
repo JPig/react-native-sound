@@ -1,5 +1,7 @@
 package com.zmxv.RNSound;
 
+import android.os.Build;
+
 import android.content.Context;
 import android.content.res.AssetFileDescriptor;
 import android.media.MediaPlayer;
@@ -7,6 +9,7 @@ import android.media.MediaPlayer.OnCompletionListener;
 import android.media.MediaPlayer.OnErrorListener;
 import android.net.Uri;
 import android.media.AudioManager;
+import android.media.AudioAttributes;
 
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.Callback;
@@ -15,6 +18,8 @@ import com.facebook.react.bridge.ReactContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.ReadableMap;
+import com.facebook.react.bridge.ReadableMapKeySetIterator;
+import com.facebook.react.bridge.ReadableType;
 import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.modules.core.ExceptionsManagerModule;
 
@@ -145,7 +150,7 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
     }
   }
 
-  protected MediaPlayer createMediaPlayer(final String fileName) {
+  protected MediaPlayer createMediaPlayer(final String fileName, final ReadableMap options) {
     int res = this.context.getResources().getIdentifier(fileName, "raw", this.context.getPackageName());
     MediaPlayer mediaPlayer = new MediaPlayer();
     if (res != 0) {
@@ -161,15 +166,57 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
     }
 
     if (fileName.startsWith("http://") || fileName.startsWith("https://")) {
-      mediaPlayer.setAudioStreamType(AudioManager.STREAM_MUSIC);
+
       Log.i("RNSoundModule", fileName);
+
+      // Switch functionality on API level due to deprecations
+      if (Build.VERSION.SDK_INT >= OREO) {
+
+        AudioAttributes attributes = new AudioAttributes.Builder()
+          .setUsage(AudioAttributes.USAGE_MEDIA)
+          .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+          .build();
+
+        mediaPlayer.setAudioAttributes(attributes);
+
+      } else {
+        // This method was deprecated in API level 26.
+        mediaPlayer.setAudioStreamType(AudioManager.STREAM_MUSIC);
+      }
+
       try {
-        mediaPlayer.setDataSource(fileName);
+
+        // if have headers
+        if(options.hasKey("headers")) {
+
+          Map<String, String> _headers = new HashMap<String, String>();
+          ReadableMap headers = options.getMap("headers");
+          Uri uri = Uri.parse(fileName);
+
+          ReadableMapKeySetIterator iterator = headers.keySetIterator();
+
+          while (iterator.hasNextKey()) {
+            String key = iterator.nextKey();
+            ReadableType type = headers.getType(key);
+            if(type == ReadableType.String) {
+              _headers.put(key, headers.getString(key));
+            }
+          }
+
+          Context context = this.context.getApplicationContext();
+          mediaPlayer.setDataSource(context, uri, _headers);
+
+        } else {
+          mediaPlayer.setDataSource(fileName); // No headers given
+        }
+
       } catch(IOException e) {
         Log.e("RNSoundModule", "Exception", e);
         return null;
       }
+
       return mediaPlayer;
+
     }
 
     if (fileName.startsWith("asset:/")){
@@ -196,7 +243,7 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
       }
       return mediaPlayer;
     }
-    
+
     return null;
   }
 
