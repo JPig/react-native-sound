@@ -6,6 +6,8 @@
     #import <React/RCTUtils.h>
 #endif
 
+#import <React/RCTConvert.h>
+
 @implementation RNSound {
   NSMutableDictionary* _playerPool;
   NSMutableDictionary* _callbackPool;
@@ -183,36 +185,89 @@ RCT_EXPORT_METHOD(prepare:(NSString*)fileName
                   withKey:(nonnull NSNumber*)key
                   withOptions:(NSDictionary*)options
                   withCallback:(RCTResponseSenderBlock)callback) {
+
   NSError* error;
   NSURL* fileNameUrl;
   AVAudioPlayer* player;
+  NSDictionary *headers = [RCTConvert NSDictionary:options[@"headers"]];
 
-  if ([fileName hasPrefix:@"http"]) {
-    fileNameUrl = [NSURL URLWithString:fileName];
-    NSData* data = [NSData dataWithContentsOfURL:fileNameUrl];
-    player = [[AVAudioPlayer alloc] initWithData:data error:&error];
-  }
-  else if ([fileName hasPrefix:@"ipod-library://"]) {
-    fileNameUrl = [NSURL URLWithString:fileName];
-    player = [[AVAudioPlayer alloc] initWithContentsOfURL:fileNameUrl error:&error];
-  }
-  else {
-    fileNameUrl = [NSURL URLWithString: fileName];
-    player = [[AVAudioPlayer alloc]
-              initWithContentsOfURL:fileNameUrl
-              error:&error];
-  }
+  // Check if we were given headers
+  if( [fileName hasPrefix:@"http"] && headers) {
 
-  if (player) {
-    player.delegate = self;
-    player.enableRate = YES;
-    [player prepareToPlay];
-    [[self playerPool] setObject:player forKey:key];
-    callback(@[[NSNull null], @{@"duration": @(player.duration),
-                                @"numberOfChannels": @(player.numberOfChannels)}]);
+    NSURLSessionConfiguration* _config;
+    NSURLSession* _session;
+    _config = [NSURLSessionConfiguration defaultSessionConfiguration];
+    _config.HTTPAdditionalHeaders = headers;
+    _session = [NSURLSession sessionWithConfiguration:_config];
+    NSURL *url = [NSURL URLWithString:fileName];
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalAndRemoteCacheData timeoutInterval:60.0];
+
+    // Get Audio Data Task
+    NSURLSessionDataTask *task = [_session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *err) {
+
+      if (err) {
+        NSLog(@"Network Error: %@", err);
+        callback(@[RCTJSErrorFromNSError(err)]);
+        return;
+      }
+
+      if (!data) {
+        NSLog(@"Didnt get data from url");
+        NSError *_dataError = [NSError errorWithDomain:@"RNSound" code:400 userInfo:@{@"Error": @"No data received from the url"}];
+        callback(@[RCTJSErrorFromNSError(_dataError)]);
+        return;
+      }
+
+      AVAudioPlayer* _player;
+      NSError* _error;
+      _player = [[AVAudioPlayer alloc] initWithData:data error:&_error];
+
+      // check if player was initialised successfully
+      if (_player) {
+        _player.delegate = self;
+        _player.enableRate = YES;
+        [_player prepareToPlay];
+        [[self playerPool] setObject:_player forKey:key];
+        callback(@[[NSNull null], @{@"duration": @(_player.duration),
+                                    @"numberOfChannels": @(_player.numberOfChannels)}]);
+      } else {
+        NSLog(@"Got Error: %@", _error);
+        callback(@[RCTJSErrorFromNSError(_error)]);
+      }
+
+    }];
+
+    [task resume];
+
   } else {
-    callback(@[RCTJSErrorFromNSError(error)]);
+
+    if ([fileName hasPrefix:@"http"]) {
+      fileNameUrl = [NSURL URLWithString:fileName];
+      NSData* data = [NSData dataWithContentsOfURL:fileNameUrl];
+      player = [[AVAudioPlayer alloc] initWithData:data error:&error];
+    } else if ([fileName hasPrefix:@"ipod-library://"]) {
+      fileNameUrl = [NSURL URLWithString:fileName];
+      player = [[AVAudioPlayer alloc] initWithContentsOfURL:fileNameUrl error:&error];
+    } else {
+      fileNameUrl = [NSURL URLWithString: fileName];
+      player = [[AVAudioPlayer alloc]
+                initWithContentsOfURL:fileNameUrl
+                error:&error];
+    }
+
+    if (player) {
+      player.delegate = self;
+      player.enableRate = YES;
+      [player prepareToPlay];
+      [[self playerPool] setObject:player forKey:key];
+      callback(@[[NSNull null], @{@"duration": @(player.duration),
+                                  @"numberOfChannels": @(player.numberOfChannels)}]);
+    } else {
+      callback(@[RCTJSErrorFromNSError(error)]);
+    }
+
   }
+
 }
 
 RCT_EXPORT_METHOD(play:(nonnull NSNumber*)key withCallback:(RCTResponseSenderBlock)callback) {
