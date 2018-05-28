@@ -31,6 +31,9 @@ import java.io.IOException;
 import android.util.Log;
 
 public class RNSoundModule extends ReactContextBaseJavaModule implements AudioManager.OnAudioFocusChangeListener {
+
+  final static Integer OREO = 26;
+
   Map<Double, MediaPlayer> playerPool = new HashMap<>();
   ReactApplicationContext context;
   final static Object NULL = null;
@@ -59,7 +62,7 @@ public class RNSoundModule extends ReactContextBaseJavaModule implements AudioMa
 
   @ReactMethod
   public void prepare(final String fileName, final Double key, final ReadableMap options, final Callback callback) {
-    MediaPlayer player = createMediaPlayer(fileName);
+    MediaPlayer player = createMediaPlayer(fileName, options);
     if (player == null) {
       WritableMap e = Arguments.createMap();
       e.putInt("code", -1);
